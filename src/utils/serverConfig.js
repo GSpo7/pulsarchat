@@ -14,6 +14,7 @@ function parseConfiguredServerUrl() {
 
     return {
       notifyUrl: `${wsProtocol}//${url.host}/notify`,
+      permanentUrl: `${wsProtocol}//${url.host}/permanent`,
       peer: {
         host: url.hostname,
         port: url.port ? Number(url.port) : isSecure ? 443 : 80,
@@ -49,6 +50,7 @@ function getLocalDevServerConfig() {
 
   return {
     notifyUrl: `${origin}/notify`,
+    permanentUrl: `${origin.replace(/^http/, "ws")}/permanent`,
     peer: {
       host: hostname,
       port: port ? Number(port) : protocol === "https:" ? 443 : 80,

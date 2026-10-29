@@ -5,6 +5,7 @@ import { usePushNotifications } from "./hooks/usePushNotifications";
 import { useSettings } from "./hooks/useSettings";
 import { APP_VIEW, useAppNavigation } from "./hooks/useAppNavigation";
 import { useActiveSavedChats } from "./hooks/useActiveSavedChats";
+import { consumeInviteFromUrl } from "./permanent/roomKeys";
 import {
   getInitialAddContactHandle,
   getInitialRoomCode,
@@ -21,6 +22,8 @@ import Chat from "./components/Chat";
 import Contacts from "./components/Contacts";
 import ConversationList from "./components/ConversationList";
 import SavedChat from "./components/SavedChat";
+import PermanentLobby from "./components/PermanentLobby";
+import PermanentChat from "./components/PermanentChat";
 import ProfileEditor from "./components/ProfileEditor";
 import Legal from "./components/Legal";
 import Feedback from "./components/Feedback";
@@ -30,6 +33,8 @@ import styles from "./App.module.css";
 
 const initialCode = getInitialRoomCode();
 const initialSavedInvite = initialCode ? null : getInitialSavedInvite();
+// #/r/<code> invite: read once and removed from the address bar immediately.
+const initialPermanentCode = consumeInviteFromUrl();
 const initialAddContactHandle =
   initialCode || initialSavedInvite ? "" : getInitialAddContactHandle();
 
@@ -52,9 +57,13 @@ export default function App() {
     mode,
     view,
     savedChatContact,
+    permanentRoom,
     setView,
     switchToSavedMode,
     switchToGhostMode,
+    switchToPermanentMode,
+    openPermanentRoom,
+    closePermanentRoom,
     openSavedChat,
   } = useAppNavigation();
 
@@ -122,6 +131,10 @@ export default function App() {
     disconnectAllSavedChats();
     switchToGhostMode();
   }, [disconnectAllSavedChats, switchToGhostMode]);
+
+  useEffect(() => {
+    if (initialPermanentCode) switchToPermanentMode();
+  }, [switchToPermanentMode]);
 
   useEffect(() => {
     if (initialCode) {
@@ -259,6 +272,15 @@ export default function App() {
     mode === "saved" &&
     view === APP_VIEW.SAVED_CHAT &&
     savedChatContact;
+  const showPermanentLobby =
+    !activePeerScreen &&
+    mode === "permanent" &&
+    view === APP_VIEW.PERMANENT_LOBBY;
+  const showPermanentChat =
+    !activePeerScreen &&
+    mode === "permanent" &&
+    view === APP_VIEW.PERMANENT_CHAT &&
+    permanentRoom;
   const showProfileEditor =
     !activePeerScreen &&
     mode === "saved" &&
@@ -293,6 +315,7 @@ export default function App() {
           onJoin={joinRoom}
           onContacts={() => setView(APP_VIEW.CONTACTS)}
           onSavedMode={switchToSavedMode}
+          onPermanentMode={switchToPermanentMode}
           onLegal={() => setView(APP_VIEW.LEGAL)}
           onOpenSettings={() => openSettings()}
           initialCode={initialCode}
@@ -343,6 +366,27 @@ export default function App() {
           onOpenSettings={openSettings}
           onConversationChanged={notifyPersistedChange}
           onMessageActivity={markMessageActivity}
+        />
+      )}
+
+      {showPermanentLobby && (
+        <PermanentLobby
+          onBack={switchToGhostMode}
+          onOpenRoom={openPermanentRoom}
+          onToast={showToast}
+          onOpenSettings={() => openSettings()}
+          initialCode={initialPermanentCode || ""}
+        />
+      )}
+
+      {showPermanentChat && (
+        <PermanentChat
+          key={permanentRoom.roomId}
+          room={permanentRoom}
+          settings={settings}
+          onBack={closePermanentRoom}
+          onToast={showToast}
+          onOpenSettings={openSettings}
         />
       )}
 

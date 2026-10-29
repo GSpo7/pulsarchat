@@ -5,8 +5,11 @@
   "license": "AGPL-3.0",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js",
+    "test": "node --test \"tests/**/*.test.js\""
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
@@ -15,6 +18,8 @@
     "@capacitor/core": "^8.2.0",
     "@capacitor/push-notifications": "^8.0.2",
     "@capacitor/splash-screen": "^8.0.1",
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.22.3",
     "firebase-admin": "^13.7.0",
     "peer": "^1.0.2",
     "peerjs": "^1.5.5",
