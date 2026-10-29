@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { SOURCE_URL } from "../utils/sourceUrl";
 import styles from "../App.module.css";
 
 export default function Lobby({
@@ -6,6 +7,7 @@ export default function Lobby({
   onJoin,
   onContacts,
   onSavedMode,
+  onPermanentMode,
   onLegal,
   onOpenSettings,
   initialCode,
@@ -33,11 +35,11 @@ export default function Lobby({
           Pulsar<span>chat</span>
         </h1>
         <div className={styles.tagline}>
-          encrypted peer-to-peer chat · no accounts · no logs · no trace
+          encrypted chat · no accounts · ghost rooms leave no trace
         </div>
 
         <a
-          href="https://github.com/munroo/pulsarchat"
+          href={SOURCE_URL}
           target="_blank"
           rel="noopener noreferrer"
           className={styles.openSourceBadge}
@@ -109,6 +111,21 @@ export default function Lobby({
               />
             </svg>
             saved chats
+          </button>
+        </div>
+
+        <div className={styles.heroQuickActions}>
+          <button className={styles.savedModeBtn} onClick={onPermanentMode}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            permanent rooms
           </button>
         </div>
 
@@ -306,6 +323,17 @@ export default function Lobby({
               </p>
             </div>
             <div className={styles.securityItem}>
+              <strong>Permanent rooms are the exception</strong>
+              <p>
+                Permanent rooms are not peer-to-peer. Your browser turns the
+                code you choose into a room ID and an encryption key, encrypts
+                every message, and our server stores only the scrambled result
+                so the chat is there whenever you come back. The server never
+                receives your code and cannot read the messages. Ghost mode and
+                saved chats still store nothing on the server.
+              </p>
+            </div>
+            <div className={styles.securityItem}>
               <strong>Pings are forwarded, not stored</strong>
               <p>
                 When you ping a contact, the notification server relays one
@@ -360,7 +388,7 @@ export default function Lobby({
           </button>{" "}
           &middot;{" "}
           <a
-            href="https://github.com/munroo/pulsarchat"
+            href={SOURCE_URL}
             target="_blank"
             rel="noopener noreferrer"
             className={styles.githubLink}

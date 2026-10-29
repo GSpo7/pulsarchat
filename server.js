@@ -1,13 +1,37 @@
 import { createServer } from "http";
+import { existsSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import { ExpressPeerServer } from "peer";
 import { WebSocketServer } from "ws";
 import { parse } from "url";
 import admin from "firebase-admin";
+import { loadConfig } from "./server/config.js";
+import { getClientIp } from "./server/clientIp.js";
+import { isOriginAllowed } from "./server/origin.js";
+import { openDatabase } from "./server/db.js";
+import { createPermanentRooms } from "./server/permanentRooms.js";
 
-const port = process.env.PORT || 9000;
+const config = loadConfig();
+const port = config.port;
 const app = express();
 const server = createServer(app);
+const distDir = join(dirname(fileURLToPath(import.meta.url)), "dist");
+
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+
+// ── Permanent rooms (stored, end-to-end encrypted) ──────────
+const db = openDatabase(config.databasePath, {
+  roomMaxBytes: config.limits.roomMaxBytes,
+});
+const permanentRooms = createPermanentRooms({ db, config });
 
 // ── PeerJS (uses Express middleware only, no auto-upgrade) ──
 const dummyServer = createServer();
@@ -19,15 +43,6 @@ const handles = new Map();
 const handleTokens = new Map(); // handle → token (prevents hijacking)
 const pushTokens = new Map();
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16384 });
-
-// ── Origin allowlist ────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  "https://pulsarchat.space",
-  "https://www.pulsarchat.space",
-  "capacitor://localhost",
-  "https://localhost",
-  "http://localhost",
-];
 
 // ── Connection rate limiting ────────────────────────────────
 const connectionRates = new Map();
@@ -149,18 +164,9 @@ server.on("upgrade", (req, socket, head) => {
       socket.destroy();
     };
 
-    // Origin check (skip in dev when NODE_ENV is explicitly set)
-    if (process.env.NODE_ENV !== "development") {
-      const origin = req.headers.origin;
-      if (origin) {
-        const allowed =
-          ALLOWED_ORIGINS.some((o) => origin.startsWith(o)) ||
-          origin.includes(".vercel.app");
-        if (!allowed) {
-          rejectUpgrade(`origin ${origin}`);
-          return;
-        }
-      }
+    if (!isOriginAllowed(req.headers.origin, config)) {
+      rejectUpgrade(`origin ${req.headers.origin}`);
+      return;
     }
 
     // Require handle and token
@@ -178,8 +184,8 @@ server.on("upgrade", (req, socket, head) => {
       return;
     }
 
-    // Per-IP connection rate limit
-    const ip = req.socket.remoteAddress;
+    // Per-IP connection rate limit (real client IP, not the proxy's)
+    const ip = getClientIp(req, config.trustProxy);
     const now = Date.now();
     const rate = connectionRates.get(ip) || { count: 0, reset: now + 60000 };
     if (now > rate.reset) {
@@ -197,6 +203,8 @@ server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, handle);
     });
+  } else if (pathname === "/permanent") {
+    permanentRooms.handleUpgrade(req, socket, head);
   } else if (pathname.startsWith("/peerjs")) {
     dummyServer.emit("upgrade", req, socket, head);
   } else {
@@ -205,14 +213,77 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-// ── Stats endpoint ──────────────────────────────────────────
-app.get("/stats", (req, res) => {
-  if (req.query.key !== process.env.STATS_SECRET) {
-    return res.status(401).json({ error: "unauthorized" });
+// Stale rate-limit entries would otherwise accumulate forever.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rate] of connectionRates) {
+    if (now > rate.reset) connectionRates.delete(ip);
   }
-  res.json({ activeUsers: handles.size });
+}, 60000).unref();
+
+// ── Health + stats ──────────────────────────────────────────
+app.get("/api/health", (req, res) => {
+  try {
+    db.ping();
+    res.json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false });
+  }
 });
 
-server.listen(port, () => {
-  console.log(`PeerJS + notification server running on port ${port}`);
+app.get("/stats", (req, res) => {
+  const secret = process.env.STATS_SECRET;
+  if (!secret || req.query.key !== secret) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  res.json({
+    activeUsers: handles.size,
+    permanentConnections: permanentRooms.onlineCount(),
+  });
 });
+
+// ── Built frontend (single origin: site + signalling + rooms) ──
+if (existsSync(distDir)) {
+  app.use(
+    express.static(distDir, {
+      index: false,
+      setHeaders(res, filePath) {
+        // Vite fingerprints everything in /assets, so it is safe to cache forever.
+        if (filePath.includes(`${join(distDir, "assets")}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.startsWith("/api/") || req.path.startsWith("/peerjs")) return next();
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(join(distDir, "index.html"));
+  });
+} else {
+  console.warn("[http] dist/ not found — run `npm run build` to serve the site");
+}
+
+server.listen(port, config.host, () => {
+  console.log(
+    `PulsarChat server running on ${config.host || "0.0.0.0"}:${port} (db: ${config.databasePath})`,
+  );
+});
+
+function shutdown() {
+  console.log("[server] shutting down");
+  permanentRooms.close();
+  server.close(() => {
+    db.close();
+    process.exit(0);
+  });
+  setTimeout(() => {
+    db.close();
+    process.exit(0);
+  }, 5000).unref();
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

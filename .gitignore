@@ -16,3 +16,21 @@ android/app/google-services.json
 
 # Capacitor
 capacitor.config.json.bak
+# Permanent-room database
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+data/
+
+# Cloudflare tunnel credentials
+*.cfargotunnel.json
+cert.pem
+
+# SSH keys must never be committed
+sshkey
+sshkey.pub
+id_rsa*
+id_ed25519*
+*.ppk
+*.pem

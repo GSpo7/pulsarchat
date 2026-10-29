@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
+import { SOURCE_URL as GITHUB_URL } from "../utils/sourceUrl";
 import styles from "../App.module.css";
 
 const EXIT_ANIMATION_MS = 240;
-const GITHUB_URL = "https://github.com/munroo/pulsarchat";
 
 function Toggle({ on, onToggle }) {
   return (
