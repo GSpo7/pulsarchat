@@ -480,13 +480,20 @@ The server never has the room codes, so rooms appear as hashes.
 
 ```bash
 cd /opt/pulsarchat
-# list rooms (hash, message count, size, created) — never content
+# list rooms, newest first (hash, message count, size, created, last message) — never content
 sudo -u pulsarchat DATABASE_PATH=/var/lib/pulsarchat/pulsar.db node scripts/purge-room.js --list
 
-# permanently delete one room (e.g. on a removal request: the requester gives you the code)
+# permanently delete one room when you HAVE the code
 sudo -u pulsarchat DATABASE_PATH=/var/lib/pulsarchat/pulsar.db node scripts/purge-room.js --code "the room code"
+
+# permanently delete one room when you do NOT have the code: use its hash from --list
+sudo -u pulsarchat DATABASE_PATH=/var/lib/pulsarchat/pulsar.db node scripts/purge-room.js --hash <64-hex hash from --list>
 ```
-It asks you to type `DELETE` to confirm. Deletion is permanent (restore from backup if it was a mistake).
+Either way it prints the room and asks you to type `DELETE` to confirm. Deletion is permanent and also removes the room's read receipts.
+
+**Deleting a room whose code you lost.** The server never knows codes, only a hash, so it cannot tell you which room is "yours". Identify it by the details in `--list`: `created` (when you first sent a message), `last_message` (when anyone last wrote), `messages` and `bytes`. If two rooms look alike, the newest-first order and last-message time usually settle it. Because a wrong guess deletes someone else's chat, take a backup first (`sudo /usr/local/bin/pulsarchat-backup.sh`) so a mistake can be restored (Part 9.4). Only someone with SSH access to the server can do this; there is deliberately no delete button in the app, because anyone holding a code could use it to wipe the room for everyone.
+
+Backups taken before the purge still contain the room until they age out (30 days with the script in Part 9.3). Delete those copies from R2 as well if the data must be gone sooner.
 
 Limits you can tune in `/etc/pulsarchat.env` (then `sudo systemctl restart pulsarchat`): `ROOM_MAX_BYTES`, `MAX_TEXT_BYTES`, `MAX_IMAGE_BYTES`, `MAX_AUDIO_BYTES`, `PAGE_MAX_BYTES`, `MIN_FREE_DISK_BYTES`, `SOCKET_MESSAGES_PER_10S`, `CONNECTIONS_PER_MINUTE_PER_IP`, `NEW_ROOMS_PER_HOUR_PER_IP` (defaults are listed in `.env.example`).
 

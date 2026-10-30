@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DELIVERY_STATUS } from "../chat/messageModels";
+import { DELIVERY_STATUS, formatMessageTime } from "../chat/messageModels";
 import { CONNECTION } from "../permanent/permanentClient";
 import { buildInviteUrl } from "../permanent/roomKeys";
 import { usePermanentRoom } from "../hooks/usePermanentRoom";
@@ -18,13 +18,57 @@ function Lightbox({ src, onClose }) {
   );
 }
 
-function statusLine(connection, online, typingNames) {
+function statusLine(connection, online) {
   if (connection === CONNECTION.CONNECTING) return "connecting…";
   if (connection === CONNECTION.RECONNECTING) return "reconnecting…";
   if (connection === CONNECTION.CLOSED) return "disconnected";
-  if (typingNames.length === 1) return `${typingNames[0]} is typing…`;
-  if (typingNames.length > 1) return "several people are typing…";
   return online > 1 ? `${online} online` : "just you here";
+}
+
+function typingLine(typingNames) {
+  if (typingNames.length === 1) return `${typingNames[0]} is typing…`;
+  return "several people are typing…";
+}
+
+// One check = stored on the server, two = someone else has read it.
+function DeliveryTicks({ message }) {
+  const read = !!message.readAt;
+  const sent = message.seq != null;
+  const label = read ? "read" : sent ? "sent" : "sending";
+  return (
+    <span
+      className={`${styles.ticks} ${read ? styles.ticksRead : ""}`}
+      title={label}
+      role="img"
+      aria-label={label}
+    >
+      {sent ? (
+        <svg width="16" height="10" viewBox="0 0 16 10" fill="none">
+          <path
+            d="M1 5.2L3.8 8 9.6 1.6"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {read && (
+            <path
+              d="M5.6 7.9L6.2 8.2 12.2 1.6"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+        </svg>
+      ) : (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M5 2.8V5l1.6 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )}
+    </span>
+  );
 }
 
 export default function PermanentChat({
@@ -172,7 +216,7 @@ export default function PermanentChat({
           className={styles.connectedDot}
           style={live ? undefined : { background: "var(--muted)", boxShadow: "none" }}
         />
-        <div className={styles.chatTitle}>{statusLine(connection, online, typingNames)}</div>
+        <div className={styles.chatTitle}>{statusLine(connection, online)}</div>
         <div className={styles.chatRoom}>{room.label}</div>
         {room.code && (
           <button className={styles.iconBtn} onClick={copyInvite} title="copy invite link">
@@ -304,13 +348,22 @@ export default function PermanentChat({
                     retry
                   </button>
                 </div>
+              ) : isMine ? (
+                <div className={styles.msgMeta}>
+                  <DeliveryTicks message={message} />
+                  {settings.timestamps && (
+                    <span className={styles.msgTime}>
+                      {waiting
+                        ? "sending…"
+                        : `sent ${message.time}${
+                            message.readAt ? ` · read ${formatMessageTime(message.readAt)}` : ""
+                          }`}
+                    </span>
+                  )}
+                </div>
               ) : (
-                (isGroupEnd || waiting) &&
-                settings.timestamps && (
-                  <div className={styles.msgTime}>
-                    {waiting ? "sending…" : message.time}
-                  </div>
-                )
+                isGroupEnd &&
+                settings.timestamps && <div className={styles.msgTime}>{message.time}</div>
               )}
             </div>
           );
@@ -345,6 +398,17 @@ export default function PermanentChat({
           <button className={styles.imagePreviewCancel} onClick={() => setReplyTarget(null)}>
             &times;
           </button>
+        </div>
+      )}
+
+      {typingNames.length > 0 && (
+        <div className={styles.typingBar}>
+          <span className={styles.typingDots} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          {typingLine(typingNames)}
         </div>
       )}
 

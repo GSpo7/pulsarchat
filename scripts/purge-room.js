@@ -25,13 +25,17 @@ const databasePath = process.env.DATABASE_PATH || "./data/pulsar.db";
 const db = new Database(databasePath, { fileMustExist: true });
 db.pragma("busy_timeout = 5000");
 
-const describe = (row) =>
-  `${row.room_hash.toString("hex")}  messages=${row.last_seq}  bytes=${row.bytes_used}  created=${new Date(row.created_at).toISOString()}`;
+const lastActivity = db.prepare("SELECT MAX(ts) AS ts FROM messages WHERE room_hash = ?");
+const iso = (ms) => (ms ? new Date(ms).toISOString() : "-");
 
+const describe = (row) =>
+  `${row.room_hash.toString("hex")}  messages=${row.last_seq}  bytes=${row.bytes_used}  created=${iso(row.created_at)}  last_message=${iso(lastActivity.get(row.room_hash).ts)}`;
+
+// Rooms are identified only by hash; creation time, last activity and size are what tell them apart.
 if (flag("--list")) {
-  const rows = db.prepare("SELECT * FROM rooms ORDER BY created_at").all();
+  const rows = db.prepare("SELECT * FROM rooms ORDER BY created_at DESC").all();
   for (const row of rows) console.log(describe(row));
-  console.log(`${rows.length} room(s)`);
+  console.log(`${rows.length} room(s), newest first`);
   process.exit(0);
 }
 
@@ -66,7 +70,12 @@ if (!flag("--yes")) {
 }
 
 db.transaction(() => {
+  // older databases (before the server was restarted on the new version) have no such table
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'read_receipts'").get()) {
+    db.prepare("DELETE FROM read_receipts WHERE room_hash = ?").run(roomHash);
+  }
   db.prepare("DELETE FROM messages WHERE room_hash = ?").run(roomHash);
   db.prepare("DELETE FROM rooms WHERE room_hash = ?").run(roomHash);
 })();
 console.log("deleted");
+console.log("Note: copies in existing backups are not touched; they age out with the backup retention (30 days in DEPLOYMENT.md).");

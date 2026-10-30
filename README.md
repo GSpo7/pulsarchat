@@ -61,8 +61,9 @@ See [.env.example](.env.example) for the full, commented list (browser-side `VIT
 ## ✦ Operating permanent rooms
 
 ```bash
-node scripts/purge-room.js --list              # rooms (hashes, sizes) — never content
+node scripts/purge-room.js --list              # rooms, newest first (hash, size, last message) — never content
 node scripts/purge-room.js --code "the code"   # delete one room (asks for confirmation)
+node scripts/purge-room.js --hash <hash>       # same, without the code (hash from --list)
 ```
 
 ## ✦ License

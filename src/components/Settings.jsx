@@ -88,7 +88,7 @@ export default function Settings({
             <div className={styles.settingsRow}>
               <div>
                 <div className={styles.settingsLabel}>Show timestamps</div>
-                <div className={styles.settingsSubLabel}>Time below each message group</div>
+                <div className={styles.settingsSubLabel}>Sent and read times under messages</div>
               </div>
               <Toggle
                 on={settings.timestamps}

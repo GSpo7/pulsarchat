@@ -24,6 +24,18 @@ const MIGRATIONS = [
     UNIQUE (room_hash, msg_id)
   ) WITHOUT ROWID;
   `,
+  // Read receipts: "this device has seen everything up to up_to_seq at ts". Append-only, so
+  // the time each message was first read can be answered later. No message content.
+  `
+  CREATE TABLE read_receipts (
+    room_hash BLOB    NOT NULL REFERENCES rooms(room_hash),
+    reader_id TEXT    NOT NULL,
+    up_to_seq INTEGER NOT NULL,
+    ts        INTEGER NOT NULL,
+    PRIMARY KEY (room_hash, reader_id, up_to_seq)
+  ) WITHOUT ROWID;
+  CREATE INDEX read_receipts_by_seq ON read_receipts (room_hash, up_to_seq);
+  `,
 ];
 
 // Fixed per-message bookkeeping added to the quota on top of iv + ciphertext.
@@ -105,6 +117,15 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
     range: db.prepare(
       "SELECT * FROM messages WHERE room_hash = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
     ),
+    lastRead: db.prepare(
+      "SELECT MAX(up_to_seq) AS seq FROM read_receipts WHERE room_hash = ? AND reader_id = ?",
+    ),
+    addRead: db.prepare(
+      "INSERT OR IGNORE INTO read_receipts (room_hash, reader_id, up_to_seq, ts) VALUES (?, ?, ?, ?)",
+    ),
+    firstRead: db.prepare(
+      "SELECT MIN(ts) AS ts FROM read_receipts WHERE room_hash = ? AND up_to_seq >= ? AND reader_id != ?",
+    ),
     bytesAfter: db.prepare(
       "SELECT COALESCE(SUM(length(ct)), 0) AS bytes FROM messages WHERE room_hash = ? AND seq > ?",
     ),
@@ -173,6 +194,20 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
       );
       return { items: loadRange(roomHash, taken), hasMore };
     },
+
+    // Records that readerId has seen everything up to upToSeq. Only moves forward and never
+    // past the newest message; returns the receipt time, or null if there was nothing new.
+    recordRead(roomHash, readerId, upToSeq) {
+      const room = q.room.get(roomHash);
+      if (!room || upToSeq > room.last_seq) return null;
+      if (upToSeq <= (q.lastRead.get(roomHash, readerId).seq ?? 0)) return null;
+      const ts = Date.now();
+      q.addRead.run(roomHash, readerId, upToSeq, ts);
+      return ts;
+    },
+
+    // When someone other than `senderId` first read message `seq` (null if nobody has).
+    readAt: (roomHash, seq, senderId) => q.firstRead.get(roomHash, seq, senderId).ts ?? null,
 
     bytesAfter: (roomHash, afterSeq) => q.bytesAfter.get(roomHash, afterSeq).bytes,
 

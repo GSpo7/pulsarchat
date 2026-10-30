@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,3 +126,36 @@ test("database stores the hash, never the raw room id", () => {
   void cleanup;
 });
 
+test("operator can list rooms and purge one by hash without knowing its code", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pulsar-purge-"));
+  const path = join(dir, "t.db");
+  const db = openDatabase(path, { roomMaxBytes: 1024 * 1024 });
+  const keep = room();
+  const drop = room();
+  db.appendMessage(keep, msg("k1"));
+  db.appendMessage(drop, msg("d1"));
+  db.appendMessage(drop, msg("d2"));
+  db.recordRead(drop, "reader-aaaa", 2);
+  db.close();
+
+  const run = (...args) =>
+    execFileSync(process.execPath, ["scripts/purge-room.js", ...args], {
+      env: { ...process.env, DATABASE_PATH: path },
+      encoding: "utf8",
+    });
+
+  const listing = run("--list");
+  assert.match(listing, new RegExp(drop.toString("hex")));
+  assert.match(listing, /messages=2/);
+  assert.match(listing, /2 room\(s\)/);
+
+  assert.match(run("--hash", drop.toString("hex"), "--yes"), /deleted/);
+
+  const after = openDatabase(path, { roomMaxBytes: 1024 * 1024 });
+  assert.equal(after.roomExists(drop), false);
+  assert.equal(after.listLatest(drop, { limit: 10 }).items.length, 0);
+  assert.equal(after.roomExists(keep), true);
+  assert.equal(after.listLatest(keep, { limit: 10 }).items.length, 1);
+  after.close();
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+});

@@ -451,3 +451,68 @@ test("history pages stop at the byte budget, and big gaps fall back to the lates
   await c.close();
   await srv.stop();
 }));
+
+test("read receipts: live, stored, forward-only, and returned with history", withTempDb(async (dbPath) => {
+  const srv = await startServer(dbPath);
+  const roomId = newRoomId();
+  const idA = senderId("a");
+  const idB = senderId("b");
+  const a = await connect(srv.url);
+  const b = await connect(srv.url);
+  a.send({ type: "join", roomId, senderId: idA });
+  b.send({ type: "join", roomId, senderId: idB });
+  await a.next((f) => f.type === "joined");
+  await b.next((f) => f.type === "joined");
+
+  const first = out("one");
+  const second = out("two");
+  a.send(first);
+  await a.next((f) => f.type === "ack" && f.msgId === first.msgId);
+  a.send(second);
+  await a.next((f) => f.type === "ack" && f.msgId === second.msgId);
+  await b.next((f) => f.type === "message" && f.item.seq === 2);
+
+  // nothing is "read" until the other side says so
+  b.send({ type: "read", upToSeq: 1 });
+  const live = await a.next((f) => f.type === "receipt");
+  assert.equal(live.readerId, idB);
+  assert.equal(live.upToSeq, 1);
+  assert.ok(live.ts > 0);
+
+  // forward only: repeating or going back is ignored, past the newest message is ignored
+  b.send({ type: "read", upToSeq: 1 });
+  b.send({ type: "read", upToSeq: 99 });
+  b.send({ type: "read", upToSeq: 2 });
+  const later = await a.next((f) => f.type === "receipt" && f.upToSeq === 2);
+  assert.equal(a.frames.filter((f) => f.type === "receipt").length, 2);
+  assert.ok(later.ts >= live.ts);
+
+  // a's reader view: no receipt for its own read of someone else's messages
+  a.send({ type: "read", upToSeq: 2 });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(b.frames.filter((f) => f.type === "receipt").length, 1);
+  await a.close();
+
+  // a reconnects later: its own messages come back with the time each was first read
+  const a2 = await connect(srv.url);
+  a2.send({ type: "join", roomId, senderId: idA });
+  const page = await a2.next((f) => f.type === "messages" && f.dir === "initial");
+  const byseq = Object.fromEntries(page.items.map((m) => [m.seq, m]));
+  assert.equal(byseq[1].readAt, live.ts);
+  assert.equal(byseq[2].readAt, later.ts);
+  assert.ok(byseq[2].readAt >= byseq[1].readAt);
+
+  // the reader's own view of those messages has no readAt (they are not its messages)
+  const b2 = await connect(srv.url);
+  b2.send({ type: "join", roomId, senderId: idB });
+  const bpage = await b2.next((f) => f.type === "messages" && f.dir === "initial");
+  assert.ok(bpage.items.every((m) => !("readAt" in m)));
+
+  // bad input
+  a2.send({ type: "read", upToSeq: "x" });
+  await a2.next((f) => f.type === "error" && f.code === "bad_request");
+  await a2.close();
+  await b.close();
+  await b2.close();
+  await srv.stop();
+}));

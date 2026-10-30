@@ -330,3 +330,9 @@ Known limitations still true
 - **Settings**: "Compact mode" toggle replaced by a 5-step font size slider (11/13/15/17/20 px, default 13 px) that applies to message text in all chat types. "Terms & privacy" moved into Settings (ghost lobby only) because the lobby footer was removed.
 - **Home/lobby**: app renamed to "Pulsar", tagline, info sections and "how does it work?" removed; permanent-rooms screen reduced to code, name, label, "save room" toggle (default off).
 
+### Owner-requested changes, second round (2026-10-30)
+- **Typing indicator** moved from the header to a bar directly above the input row (visible on mobile).
+- **Read receipts**: migration 2 adds append-only `read_receipts (room_hash, reader_id, up_to_seq, ts)`. A client sends `read{upToSeq}` (debounced, only while the tab is visible and the room is live); the server stores it (forward-only, never past the newest message) and relays `receipt{readerId, upToSeq, ts}`. Own messages come back in history with `readAt` (first time someone else read them), so a receipt that happened while the sender was away still shows. One check = stored on the server; two checks = read by someone else. No message content is involved; legal text updated.
+- **Timestamps** default to off; when on, own messages show `sent hh:mm · read hh:mm`.
+- **Presence fix**: the client closes its socket on `pagehide` and reconnects on `pageshow`, so a page parked in the browser back/forward cache no longer counts as an online member.
+- **Deleting a room without its code**: `scripts/purge-room.js --hash <hash>` (list is now newest-first with last-message time). Still the only deletion path; no in-app delete (rule 5).
