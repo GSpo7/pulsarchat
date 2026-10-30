@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { compressImage } from "../utils/image";
 import { playNotificationSound } from "../utils/sound";
 import EMOJI from "../utils/emoji";
+import { messageFontStyle } from "../utils/fontSize";
 import { useSavedChat } from "../hooks/useSavedChat";
 import styles from "../App.module.css";
 
@@ -271,7 +272,7 @@ export default function SavedChat({
   const peerName = peerProfile?.displayName || contact.nickname || contact.handle;
 
   return (
-    <main className={`${styles.chatWrap} ${settings?.compact ? styles.compact : ""}`}>
+    <main className={styles.chatWrap} style={messageFontStyle(settings)}>
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
 
       <div className={styles.chatHeader}>

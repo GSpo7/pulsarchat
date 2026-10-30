@@ -14,7 +14,9 @@ function list(name) {
 
 export function loadConfig() {
   const isProduction = process.env.NODE_ENV === "production";
-  const maxImageBytes = int("MAX_IMAGE_BYTES", 1024 * 1024);
+  // Photos are sent as taken (no re-compression), so the default has to fit a phone camera.
+  const maxImageBytes = int("MAX_IMAGE_BYTES", 32 * 1024 * 1024);
+  const maxAudioBytes = int("MAX_AUDIO_BYTES", 8 * 1024 * 1024);
 
   return {
     isProduction,
@@ -25,12 +27,16 @@ export function loadConfig() {
     allowedOrigins: list("ALLOWED_ORIGINS"),
     databasePath: process.env.DATABASE_PATH || "./data/pulsar.db",
     limits: {
-      roomMaxBytes: int("ROOM_MAX_BYTES", 500 * 1024 * 1024),
+      roomMaxBytes: int("ROOM_MAX_BYTES", 2 * 1024 * 1024 * 1024),
       maxTextBytes: int("MAX_TEXT_BYTES", 64 * 1024),
       maxImageBytes,
+      maxAudioBytes,
       minFreeDiskBytes: int("MIN_FREE_DISK_BYTES", 2 * 1024 * 1024 * 1024),
       // base64 of the largest ciphertext plus JSON framing
-      maxFrameBytes: Math.ceil((maxImageBytes * 4) / 3) + 4096,
+      maxFrameBytes: Math.ceil((Math.max(maxImageBytes, maxAudioBytes) * 4) / 3) + 4096,
+      // History/catch-up replies stop adding messages past this, so a room full of photos
+      // is paged in a few at a time instead of in one huge frame.
+      pageMaxBytes: int("PAGE_MAX_BYTES", 8 * 1024 * 1024),
       socketMessagesPer10s: int("SOCKET_MESSAGES_PER_10S", 20),
       connectionsPerMinutePerIp: int("CONNECTIONS_PER_MINUTE_PER_IP", 30),
       newRoomsPerHourPerIp: int("NEW_ROOMS_PER_HOUR_PER_IP", 20),

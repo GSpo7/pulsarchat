@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resetTitle } from "../utils/notify";
 import EMOJI from "../utils/emoji";
+import { messageFontStyle } from "../utils/fontSize";
 import { useGhostChatSession } from "../hooks/useGhostChatSession";
 import styles from "../App.module.css";
 
@@ -152,7 +153,8 @@ export default function Chat({
 
   return (
     <main
-      className={`${styles.chatWrap} ${settings.compact ? styles.compact : ""}`}
+      className={styles.chatWrap}
+      style={messageFontStyle(settings)}
     >
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
 

@@ -20,7 +20,10 @@ const PAGE_SIZE = 50;
 const MAX_HISTORY_PAGE = 100;
 const CATCHUP_BATCH = 200;
 const CATCHUP_MAX_GAP = 500;
-const MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
+// Above the largest history page and a couple of queued photos; beyond this the client is too slow to keep.
+const MAX_BUFFERED_BYTES = 96 * 1024 * 1024;
+// A reconnect that missed more than this many pages' worth of data is sent the latest page instead.
+const CATCHUP_MAX_PAGES = 3;
 
 function base64DecodedBytes(value) {
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
@@ -117,7 +120,8 @@ export function createPermanentRooms({
       Number.isInteger(afterSeq) &&
       afterSeq >= 0 &&
       afterSeq <= lastSeq &&
-      lastSeq - afterSeq <= CATCHUP_MAX_GAP;
+      lastSeq - afterSeq <= CATCHUP_MAX_GAP &&
+      db.bytesAfter(hash, afterSeq) <= limits.pageMaxBytes * CATCHUP_MAX_PAGES;
 
     if (canCatchUp) {
       let cursor = afterSeq;
@@ -144,12 +148,17 @@ export function createPermanentRooms({
       !IV_RE.test(iv ?? "") ||
       typeof ct !== "string" ||
       ct.length < MIN_CT_CHARS ||
-      (kind !== "text" && kind !== "image")
+      (kind !== "text" && kind !== "image" && kind !== "audio")
     ) {
       return sendError(ws, "bad_request", typeof msgId === "string" ? msgId : undefined);
     }
 
-    const maxBytes = kind === "image" ? limits.maxImageBytes : limits.maxTextBytes;
+    const maxBytes =
+      kind === "image"
+        ? limits.maxImageBytes
+        : kind === "audio"
+          ? limits.maxAudioBytes
+          : limits.maxTextBytes;
     if (base64DecodedBytes(ct) > maxBytes) return sendError(ws, "too_large", msgId);
     if (!CT_RE.test(ct)) return sendError(ws, "bad_request", msgId);
 

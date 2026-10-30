@@ -49,7 +49,7 @@ OUT of scope — do not do these unless the owner explicitly asks in the convers
 
 ## Environment variables (server)
 
-`HOST` (127.0.0.1) · `PORT` (9000) · `NODE_ENV` · `ALLOWED_ORIGINS` (comma list, exact match) · `TRUST_PROXY` (`true` behind Cloudflare Tunnel) · `DATABASE_PATH` (`/var/lib/pulsarchat/pulsar.db`) · `ROOM_MAX_BYTES` (524288000) · `MAX_TEXT_BYTES` (65536) · `MAX_IMAGE_BYTES` (1048576) · `MIN_FREE_DISK_BYTES` (2147483648) · `STATS_SECRET` · `FIREBASE_SERVICE_ACCOUNT` (optional)
+`HOST` (127.0.0.1) · `PORT` (9000) · `NODE_ENV` · `ALLOWED_ORIGINS` (comma list, exact match) · `TRUST_PROXY` (`true` behind Cloudflare Tunnel) · `DATABASE_PATH` (`/var/lib/pulsarchat/pulsar.db`) · `ROOM_MAX_BYTES` (2147483648) · `MAX_TEXT_BYTES` (65536) · `MAX_IMAGE_BYTES` (33554432) · `MAX_AUDIO_BYTES` (8388608) · `PAGE_MAX_BYTES` (8388608) · `MIN_FREE_DISK_BYTES` (2147483648) · `STATS_SECRET` · `FIREBASE_SERVICE_ACCOUNT` (optional)
 
 Client (build-time): `VITE_SERVER_URL`, `VITE_APP_URL`, `VITE_TURN_URL`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`, `VITE_WEB3FORMS_KEY`
 

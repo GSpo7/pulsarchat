@@ -66,7 +66,7 @@ function toItem(row) {
   };
 }
 
-export function openDatabase(path, { roomMaxBytes }) {
+export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 1024 }) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
 
   const db = new Database(path);
@@ -91,16 +91,43 @@ export function openDatabase(path, { roomMaxBytes }) {
     insert: db.prepare(
       "INSERT INTO messages (room_hash, seq, msg_id, sender_id, ts, iv, ct) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ),
-    latest: db.prepare(
-      "SELECT * FROM messages WHERE room_hash = ? ORDER BY seq DESC LIMIT ?",
+    // Sizes first: length(ct) does not read the blob, so a page can be trimmed to a byte
+    // budget before any ciphertext is loaded.
+    latestSizes: db.prepare(
+      "SELECT seq, length(ct) AS size FROM messages WHERE room_hash = ? ORDER BY seq DESC LIMIT ?",
     ),
-    before: db.prepare(
-      "SELECT * FROM messages WHERE room_hash = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
+    beforeSizes: db.prepare(
+      "SELECT seq, length(ct) AS size FROM messages WHERE room_hash = ? AND seq < ? ORDER BY seq DESC LIMIT ?",
     ),
-    after: db.prepare(
-      "SELECT * FROM messages WHERE room_hash = ? AND seq > ? ORDER BY seq ASC LIMIT ?",
+    afterSizes: db.prepare(
+      "SELECT seq, length(ct) AS size FROM messages WHERE room_hash = ? AND seq > ? ORDER BY seq ASC LIMIT ?",
+    ),
+    range: db.prepare(
+      "SELECT * FROM messages WHERE room_hash = ? AND seq BETWEEN ? AND ? ORDER BY seq ASC",
+    ),
+    bytesAfter: db.prepare(
+      "SELECT COALESCE(SUM(length(ct)), 0) AS bytes FROM messages WHERE room_hash = ? AND seq > ?",
     ),
   };
+
+  // `sizes` holds up to limit + 1 rows in scan order. Takes rows until `limit` or the byte
+  // budget is hit (always at least one, so an oversized message still gets through).
+  function takeWithinBudget(sizes, limit) {
+    let used = 0;
+    let count = 0;
+    while (count < sizes.length && count < limit) {
+      if (count > 0 && used + sizes[count].size > pageMaxBytes) break;
+      used += sizes[count].size;
+      count++;
+    }
+    return { taken: sizes.slice(0, count), hasMore: sizes.length > count };
+  }
+
+  function loadRange(roomHash, taken) {
+    if (taken.length === 0) return [];
+    const seqs = taken.map((row) => row.seq);
+    return q.range.all(roomHash, Math.min(...seqs), Math.max(...seqs)).map(toItem);
+  }
 
   // The only place a room row is created: the first message sent to it.
   const appendTx = db.transaction((roomHash, { msgId, senderId, iv, ct }) => {
@@ -131,18 +158,23 @@ export function openDatabase(path, { roomMaxBytes }) {
 
     // Newest `limit` messages (optionally older than beforeSeq), returned oldest-first.
     listLatest(roomHash, { beforeSeq = null, limit }) {
-      const rows =
+      const sizes =
         beforeSeq == null
-          ? q.latest.all(roomHash, limit + 1)
-          : q.before.all(roomHash, beforeSeq, limit + 1);
-      const hasMore = rows.length > limit;
-      return { items: rows.slice(0, limit).reverse().map(toItem), hasMore };
+          ? q.latestSizes.all(roomHash, limit + 1)
+          : q.beforeSizes.all(roomHash, beforeSeq, limit + 1);
+      const { taken, hasMore } = takeWithinBudget(sizes, limit);
+      return { items: loadRange(roomHash, taken), hasMore };
     },
 
     listAfter(roomHash, afterSeq, limit) {
-      const rows = q.after.all(roomHash, afterSeq, limit + 1);
-      return { items: rows.slice(0, limit).map(toItem), hasMore: rows.length > limit };
+      const { taken, hasMore } = takeWithinBudget(
+        q.afterSizes.all(roomHash, afterSeq, limit + 1),
+        limit,
+      );
+      return { items: loadRange(roomHash, taken), hasMore };
     },
+
+    bytesAfter: (roomHash, afterSeq) => q.bytesAfter.get(roomHash, afterSeq).bytes,
 
     ping() {
       db.prepare("SELECT 1").get();

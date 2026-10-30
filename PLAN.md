@@ -60,7 +60,7 @@ The repo is **AGPL-3.0**. If you run a modified version as a public website, you
 | D8 | **No auto-expiry and no "delete for everyone"** in v1. Users can "forget this room on this device" (local only). Operator can purge a room with a CLI script. | You asked for chats that never delete. A public delete button would let any code-holder wipe history. |
 | D9 | Share link puts the code in the **URL fragment**: `https://yourdomain.com/#/r/<code>`. | Fragments are never sent to the server, proxies or Cloudflare logs. |
 | D10 | Hosting: **one VPS + Cloudflare Tunnel** serving frontend, signalling and permanent rooms from a single origin. | Cheapest persistent-disk option, no open inbound ports, free HTTPS/DDoS cover from Cloudflare, no CORS. See DEPLOYMENT.md. |
-| D11 | Images in permanent rooms: reuse `compressImage()` (≤800 px JPEG), encrypt, store in the same table. Cap 1 MB per message. | No new storage service in v1. (R2 is a later option.) |
+| D11 | Images in permanent rooms: sent as the original file (changed after launch, see §13), encrypt, store in the same table. | No new storage service in v1. (R2 is a later option.) |
 
 ### Known limitations to accept up front
 
@@ -202,10 +202,10 @@ Nothing in `src/chat/*`, `useGhostChatSession.js`, `useSavedChat*.js`, `savedCha
 Each socket is independent. The same user on two devices simply has two `senderId`s unless they copy the code to both — acceptable.
 
 ### 6.3 Abuse limits (all configurable via env)
-- max frame 1.5 MB; max text ciphertext 64 KB; max image message 1 MB
+- max text ciphertext 64 KB; max image message 32 MB; max voice note 8 MB; max frame = largest of those × 4/3 (see §13)
 - per-socket: 20 messages / 10 s
 - per-IP (via `CF-Connecting-IP`): 30 joins / min, 20 new rooms / hour
-- per-room quota `ROOM_MAX_BYTES` (default 500 MB) → `quota` error, **never deletes old data**
+- per-room quota `ROOM_MAX_BYTES` (default 2 GB) → `quota` error, **never deletes old data**
 - global disk watermark: refuse new rooms if free disk < 2 GB; log loudly
 - sockets idle > 90 s without ping are closed
 
@@ -322,3 +322,11 @@ Known limitations still true
 - The operator (or anyone who steals the server) could delete, reorder or replay ciphertext; AES-GCM protects each message's content and authenticity but not the completeness of the history.
 - Weak codes are guessable and, if the database leaked, brute-forceable offline (PBKDF2 slows this but cannot prevent it).
 - No push notifications for permanent rooms; no delivery/read receipts.
+
+### Owner-requested changes after launch (2026-10-30)
+- **Voice notes** in permanent rooms only (mic button replaces the emoji button). Recorded in the browser (MediaRecorder, ~32 kbps opus/aac, 5 min cap), sealed with the room key like any message, sent as `kind: "audio"`. Server limit `MAX_AUDIO_BYTES` (8 MB).
+- **Original-quality photos** in permanent rooms only: the file is sent as-is (client cap 20 MB, server `MAX_IMAGE_BYTES` default raised 1 MB → 32 MB, `ROOM_MAX_BYTES` default 500 MB → 2 GB). Ghost and saved chats still use `compressImage()`.
+- **Byte-budgeted history**: with large photos, a 50-message page could be gigabytes. History and catch-up replies now stop at `PAGE_MAX_BYTES` (8 MB, always at least one message); a reconnect that missed more than 3 pages of data gets the latest page instead of every missed message. `MAX_BUFFERED_BYTES` raised to 96 MB to match.
+- **Settings**: "Compact mode" toggle replaced by a 5-step font size slider (11/13/15/17/20 px, default 13 px) that applies to message text in all chat types. "Terms & privacy" moved into Settings (ghost lobby only) because the lobby footer was removed.
+- **Home/lobby**: app renamed to "Pulsar", tagline, info sections and "how does it work?" removed; permanent-rooms screen reduced to code, name, label, "save room" toggle (default off).
+

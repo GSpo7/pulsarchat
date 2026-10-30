@@ -22,6 +22,8 @@ function baseConfig(overrides = {}) {
       roomMaxBytes: 1024 * 1024,
       maxTextBytes: 2048,
       maxImageBytes: 8192,
+      maxAudioBytes: 4096,
+      pageMaxBytes: 1024 * 1024,
       minFreeDiskBytes: 0,
       maxFrameBytes: 16384,
       socketMessagesPer10s: 20,
@@ -37,7 +39,10 @@ const running = new Set();
 
 async function startServer(dbPath, configOverrides = {}) {
   const config = baseConfig({ ...configOverrides, databasePath: dbPath });
-  const db = openDatabase(dbPath, { roomMaxBytes: config.limits.roomMaxBytes });
+  const db = openDatabase(dbPath, {
+    roomMaxBytes: config.limits.roomMaxBytes,
+    pageMaxBytes: config.limits.pageMaxBytes,
+  });
   const rooms = createPermanentRooms({ db, config, logger: quiet, freeDiskBytes: () => Infinity });
   const server = createServer();
   server.on("upgrade", (req, socket, head) => rooms.handleUpgrade(req, socket, head));
@@ -385,5 +390,64 @@ test("connection rate limit uses CF-Connecting-IP only when proxy is trusted", w
   await assert.rejects(open("203.0.113.1"), /429/);
   const other = await open("203.0.113.2"); // different visitor behind the same proxy
   await Promise.all([c1.close(), c2.close(), other.close()]);
+  await srv.stop();
+}));
+
+test("audio messages use their own size limit", withTempDb(async (dbPath) => {
+  const srv = await startServer(dbPath);
+  const a = await connect(srv.url);
+  a.send({ type: "join", roomId: newRoomId(), senderId: senderId("a") });
+  await a.next((f) => f.type === "joined");
+
+  const voice = { ...out(), kind: "audio", ct: Buffer.alloc(3000, 1).toString("base64") };
+  a.send(voice);
+  await a.next((f) => f.type === "ack" && f.msgId === voice.msgId);
+
+  // 3000 bytes is over the text limit (2048) but fine for audio (4096)
+  const asText = { ...out(), ct: voice.ct };
+  a.send(asText);
+  await a.next((f) => f.type === "error" && f.code === "too_large" && f.msgId === asText.msgId);
+
+  const tooLong = { ...out(), kind: "audio", ct: Buffer.alloc(5000, 1).toString("base64") };
+  a.send(tooLong);
+  await a.next((f) => f.type === "error" && f.code === "too_large" && f.msgId === tooLong.msgId);
+  await a.close();
+  await srv.stop();
+}));
+
+test("history pages stop at the byte budget, and big gaps fall back to the latest page", withTempDb(async (dbPath) => {
+  const srv = await startServer(dbPath, { limits: { pageMaxBytes: 6000, maxImageBytes: 4000 } });
+  const roomId = newRoomId();
+  const a = await connect(srv.url);
+  a.send({ type: "join", roomId, senderId: senderId("a") });
+  await a.next((f) => f.type === "joined");
+
+  // seven 3000-byte photos: a 6000-byte page holds two, never three
+  for (let i = 0; i < 7; i++) {
+    const photo = { ...out(), kind: "image", ct: Buffer.alloc(3000, i + 1).toString("base64") };
+    a.send(photo);
+    await a.next((f) => f.type === "ack" && f.msgId === photo.msgId);
+  }
+  await a.close();
+
+  const b = await connect(srv.url);
+  b.send({ type: "join", roomId, senderId: senderId("b") });
+  const initial = await b.next((f) => f.type === "messages" && f.dir === "initial");
+  assert.equal(initial.items.length, 2);
+  assert.equal(initial.hasMore, true);
+  assert.deepEqual(initial.items.map((m) => m.seq), [6, 7]);
+
+  b.send({ type: "history", beforeSeq: 6, limit: 50 });
+  const older = await b.next((f) => f.type === "messages" && f.dir === "older");
+  assert.deepEqual(older.items.map((m) => m.seq), [4, 5]);
+  assert.equal(older.hasMore, true);
+  await b.close();
+
+  // 7 photos missed is more than three pages of budget: the client gets the latest page instead
+  const c = await connect(srv.url);
+  c.send({ type: "join", roomId, senderId: senderId("c"), afterSeq: 0 });
+  const replaced = await c.next((f) => f.type === "messages");
+  assert.equal(replaced.dir, "initial");
+  await c.close();
   await srv.stop();
 }));
