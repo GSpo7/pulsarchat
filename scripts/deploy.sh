@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Run on the server as the `deploy` user: pulls main, rebuilds, restarts.
 set -euo pipefail
 cd /opt/pulsarchat
 git fetch origin main

@@ -6,23 +6,18 @@ import { getClientIp } from "./clientIp.js";
 import { isOriginAllowed } from "./origin.js";
 import { createRateLimiter } from "./rateLimit.js";
 
-// The server never sees a room code or plaintext. `roomId` is derived in the
-// browser from the code; `iv`/`ct` are AES-GCM output. Never log any of them.
-
-const ROOM_ID_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url, no padding
+const ROOM_ID_RE = /^[A-Za-z0-9_-]{43}$/;
 const SENDER_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const MSG_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const IV_RE = /^[A-Za-z0-9+/]{16}$/; // 12 bytes, base64
+const IV_RE = /^[A-Za-z0-9+/]{16}$/;
 const CT_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 const MAX_TYPING_CT_CHARS = 1024;
-const MIN_CT_CHARS = 22; // at least the 16-byte GCM tag
+const MIN_CT_CHARS = 22;
 const PAGE_SIZE = 50;
 const MAX_HISTORY_PAGE = 100;
 const CATCHUP_BATCH = 200;
 const CATCHUP_MAX_GAP = 500;
-// Above the largest history page and a couple of queued photos; beyond this the client is too slow to keep.
 const MAX_BUFFERED_BYTES = 96 * 1024 * 1024;
-// A reconnect that missed more than this many pages' worth of data is sent the latest page instead.
 const CATCHUP_MAX_PAGES = 3;
 
 function base64DecodedBytes(value) {
@@ -86,7 +81,6 @@ export function createPermanentRooms({
     broadcast(key, { type: "presence", online: members.size });
   }
 
-  // Own messages carry the time someone else first read them (null = not read yet).
   function withReadTimes(ws, page) {
     return {
       ...page,
@@ -144,8 +138,6 @@ export function createPermanentRooms({
         cursor = page.items[page.items.length - 1].seq;
       }
     } else {
-      // First join, a very long gap, or the server DB was restored from an
-      // older backup: the client replaces what it has.
       sendInitial(ws);
     }
 

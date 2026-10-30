@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 
-// Additive, versioned migrations. Never edit an existing entry; append a new one.
 const MIGRATIONS = [
   `
   CREATE TABLE rooms (
@@ -24,8 +23,6 @@ const MIGRATIONS = [
     UNIQUE (room_hash, msg_id)
   ) WITHOUT ROWID;
   `,
-  // Read receipts: "this device has seen everything up to up_to_seq at ts". Append-only, so
-  // the time each message was first read can be answered later. No message content.
   `
   CREATE TABLE read_receipts (
     room_hash BLOB    NOT NULL REFERENCES rooms(room_hash),
@@ -38,7 +35,6 @@ const MIGRATIONS = [
   `,
 ];
 
-// Fixed per-message bookkeeping added to the quota on top of iv + ciphertext.
 const ROW_OVERHEAD_BYTES = 96;
 
 export class QuotaError extends Error {
@@ -83,7 +79,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
 
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
-  // FULL: a message is only acknowledged to the sender once it is durable.
   db.pragma("synchronous = FULL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
@@ -103,8 +98,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
     insert: db.prepare(
       "INSERT INTO messages (room_hash, seq, msg_id, sender_id, ts, iv, ct) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ),
-    // Sizes first: length(ct) does not read the blob, so a page can be trimmed to a byte
-    // budget before any ciphertext is loaded.
     latestSizes: db.prepare(
       "SELECT seq, length(ct) AS size FROM messages WHERE room_hash = ? ORDER BY seq DESC LIMIT ?",
     ),
@@ -130,9 +123,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
       "SELECT COALESCE(SUM(length(ct)), 0) AS bytes FROM messages WHERE room_hash = ? AND seq > ?",
     ),
   };
-
-  // `sizes` holds up to limit + 1 rows in scan order. Takes rows until `limit` or the byte
-  // budget is hit (always at least one, so an oversized message still gets through).
   function takeWithinBudget(sizes, limit) {
     let used = 0;
     let count = 0;
@@ -150,7 +140,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
     return q.range.all(roomHash, Math.min(...seqs), Math.max(...seqs)).map(toItem);
   }
 
-  // The only place a room row is created: the first message sent to it.
   const appendTx = db.transaction((roomHash, { msgId, senderId, iv, ct }) => {
     const duplicate = q.existing.get(roomHash, msgId);
     if (duplicate) return { seq: duplicate.seq, ts: duplicate.ts, duplicate: true };
@@ -172,12 +161,10 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
 
     lastSeq: (roomHash) => q.room.get(roomHash)?.last_seq ?? 0,
 
-    // ct is a base64 string; stored as raw bytes to save a third of the space.
     appendMessage(roomHash, { msgId, senderId, iv, ct }) {
       return appendTx(roomHash, { msgId, senderId, iv, ct: Buffer.from(ct, "base64") });
     },
 
-    // Newest `limit` messages (optionally older than beforeSeq), returned oldest-first.
     listLatest(roomHash, { beforeSeq = null, limit }) {
       const sizes =
         beforeSeq == null
@@ -195,8 +182,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
       return { items: loadRange(roomHash, taken), hasMore };
     },
 
-    // Records that readerId has seen everything up to upToSeq. Only moves forward and never
-    // past the newest message; returns the receipt time, or null if there was nothing new.
     recordRead(roomHash, readerId, upToSeq) {
       const room = q.room.get(roomHash);
       if (!room || upToSeq > room.last_seq) return null;
@@ -206,7 +191,6 @@ export function openDatabase(path, { roomMaxBytes, pageMaxBytes = 8 * 1024 * 102
       return ts;
     },
 
-    // When someone other than `senderId` first read message `seq` (null if nobody has).
     readAt: (roomHash, seq, senderId) => q.firstRead.get(roomHash, seq, senderId).ts ?? null,
 
     bytesAfter: (roomHash, afterSeq) => q.bytesAfter.get(roomHash, afterSeq).bytes,

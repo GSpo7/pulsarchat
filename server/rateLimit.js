@@ -1,4 +1,3 @@
-// Fixed-window counter keyed by an arbitrary string (usually a client IP).
 export function createRateLimiter({ limit, windowMs }) {
   const buckets = new Map();
 
@@ -11,7 +10,6 @@ export function createRateLimiter({ limit, windowMs }) {
   sweep.unref();
 
   return {
-    // Returns true when the action is allowed.
     hit(key) {
       const now = Date.now();
       let bucket = buckets.get(key);
