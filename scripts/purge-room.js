@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// Operator tool: list permanent rooms or permanently delete one.
-// This is the ONLY code path that deletes room data (app code never does).
-//
-//   node scripts/purge-room.js --list
-//   node scripts/purge-room.js --code "the room code"      (asks for confirmation)
-//   node scripts/purge-room.js --hash <64-hex room hash>   (from --list)
-//   add --yes to skip the confirmation prompt
-//
-// Reads DATABASE_PATH like the server. Run it as the service user, e.g.
-//   sudo -u pulsarchat env $(sudo cat /etc/pulsarchat.env | xargs) node scripts/purge-room.js --list
 import { createInterface } from "node:readline/promises";
 import Database from "better-sqlite3";
 import { hashRoomId } from "../server/db.js";
@@ -31,7 +21,6 @@ const iso = (ms) => (ms ? new Date(ms).toISOString() : "-");
 const describe = (row) =>
   `${row.room_hash.toString("hex")}  messages=${row.last_seq}  bytes=${row.bytes_used}  created=${iso(row.created_at)}  last_message=${iso(lastActivity.get(row.room_hash).ts)}`;
 
-// Rooms are identified only by hash; creation time, last activity and size are what tell them apart.
 if (flag("--list")) {
   const rows = db.prepare("SELECT * FROM rooms ORDER BY created_at DESC").all();
   for (const row of rows) console.log(describe(row));
@@ -70,7 +59,6 @@ if (!flag("--yes")) {
 }
 
 db.transaction(() => {
-  // older databases (before the server was restarted on the new version) have no such table
   if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'read_receipts'").get()) {
     db.prepare("DELETE FROM read_receipts WHERE room_hash = ?").run(roomHash);
   }

@@ -16,7 +16,6 @@ android/app/google-services.json
 
 # Capacitor
 capacitor.config.json.bak
-# Permanent-room database
 *.db
 *.db-wal
 *.db-shm
@@ -27,7 +26,7 @@ data/
 *.cfargotunnel.json
 cert.pem
 
-# SSH keys must never be committed
+# SSH keys
 sshkey
 sshkey.pub
 id_rsa*
