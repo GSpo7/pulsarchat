@@ -28,8 +28,6 @@ Things to know
 - Rooms never expire and there is no "delete for everyone". The operator can purge a room.
 - The operator can see metadata (timing, sizes, IPs in infrastructure logs), not content.
 
-Details: [PLAN.md](PLAN.md). Hosting: [DEPLOYMENT.md](DEPLOYMENT.md).
-
 ## ✦ Tech stack
 
 React + Vite · PeerJS/WebRTC · Web Crypto API · Node + Express + `ws` · SQLite (`better-sqlite3`)
@@ -61,13 +59,13 @@ See [.env.example](.env.example) for the full, commented list (browser-side `VIT
 ## ✦ Operating permanent rooms
 
 ```bash
-node scripts/purge-room.js --list              # rooms, newest first (hash, size, last message) — never content
+node scripts/purge-room.js --list              # rooms, newest first (hash, size, last message)
 node scripts/purge-room.js --code "the code"   # delete one room (asks for confirmation)
 node scripts/purge-room.js --hash <hash>       # same, without the code (hash from --list)
 ```
 
 ## ✦ License
 
-AGPL-3.0 — see [LICENSE](LICENSE). If you run a modified version as a public service you must offer its source to users: publish your fork and set `VITE_SOURCE_URL` so the in-app link points to it.
+AGPL-3.0 — see [LICENSE](LICENSE).
 
 Original project by //tedDev.
