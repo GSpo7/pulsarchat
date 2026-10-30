@@ -412,9 +412,13 @@ access_key_id = YOUR_ACCESS_KEY_ID
 secret_access_key = YOUR_SECRET_ACCESS_KEY
 endpoint = https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 acl = private
+no_check_bucket = true
 EOF
 sudo chmod 600 /etc/pulsarchat-rclone.conf
 ```
+`no_check_bucket = true` is required with a bucket-scoped token: without it rclone tries to create/check the bucket first and R2 answers `AccessDenied`. If you chose an EU jurisdiction for the bucket, the endpoint is `https://YOUR_ACCOUNT_ID.eu.r2.cloudflarestorage.com`.
+
+If the upload still says `AccessDenied`: the token's permission must be **Object Read & Write** (not Read only) and its scope must include the `pulsarchat-backups` bucket; check with `rclone --config /etc/pulsarchat-rclone.conf lsd r2:` (a bucket-scoped token may list nothing — that is fine) and `rclone --config /etc/pulsarchat-rclone.conf ls r2:pulsarchat-backups`. A wrong key gives `InvalidAccessKeyId`/`SignatureDoesNotMatch` instead.
 
 ### 9.3 Backup script
 ```bash
@@ -484,7 +488,7 @@ sudo -u pulsarchat DATABASE_PATH=/var/lib/pulsarchat/pulsar.db node scripts/purg
 ```
 It asks you to type `DELETE` to confirm. Deletion is permanent (restore from backup if it was a mistake).
 
-Limits you can tune in `/etc/pulsarchat.env` (then `sudo systemctl restart pulsarchat`): `ROOM_MAX_BYTES`, `MAX_TEXT_BYTES`, `MAX_IMAGE_BYTES`, `MIN_FREE_DISK_BYTES`, `SOCKET_MESSAGES_PER_10S`, `CONNECTIONS_PER_MINUTE_PER_IP`, `NEW_ROOMS_PER_HOUR_PER_IP` (defaults are listed in `.env.example`).
+Limits you can tune in `/etc/pulsarchat.env` (then `sudo systemctl restart pulsarchat`): `ROOM_MAX_BYTES`, `MAX_TEXT_BYTES`, `MAX_IMAGE_BYTES`, `MAX_AUDIO_BYTES`, `PAGE_MAX_BYTES`, `MIN_FREE_DISK_BYTES`, `SOCKET_MESSAGES_PER_10S`, `CONNECTIONS_PER_MINUTE_PER_IP`, `NEW_ROOMS_PER_HOUR_PER_IP` (defaults are listed in `.env.example`).
 
 ---
 

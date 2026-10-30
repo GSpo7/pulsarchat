@@ -6,7 +6,7 @@ const DEFAULTS = {
   tabTitle: false,
   sounds: false,
   autoDelete: false,
-  compact: false,
+  fontSize: 1,
   timestamps: true,
 };
 

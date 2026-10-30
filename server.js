@@ -30,6 +30,7 @@ app.use((req, res, next) => {
 // ── Permanent rooms (stored, end-to-end encrypted) ──────────
 const db = openDatabase(config.databasePath, {
   roomMaxBytes: config.limits.roomMaxBytes,
+  pageMaxBytes: config.limits.pageMaxBytes,
 });
 const permanentRooms = createPermanentRooms({ db, config });
 

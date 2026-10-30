@@ -16,12 +16,6 @@ import {
 } from "../permanent/permanentStore";
 import styles from "../App.module.css";
 
-const STRENGTH_TEXT = {
-  weak: "weak — anyone could guess this code and read the whole chat. Use a longer one or tap generate.",
-  fair: "fair — fine for casual chat; longer is safer.",
-  strong: "strong",
-};
-
 export default function PermanentLobby({
   onBack,
   onOpenRoom,
@@ -33,7 +27,7 @@ export default function PermanentLobby({
   const [showCode, setShowCode] = useState(!!initialCode);
   const [label, setLabel] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [rooms, setRooms] = useState([]);
@@ -65,7 +59,7 @@ export default function PermanentLobby({
       const name = (nameOverride ?? existing?.displayName ?? "").trim();
       const roomLabel =
         (labelOverride ?? existing?.label ?? "").trim() || `Room ${roomId.slice(0, 4)}`;
-      const keepCode = rememberOverride ?? existing?.remember ?? true;
+      const keepCode = rememberOverride ?? existing?.remember ?? false;
 
       await saveRoom({
         roomId,
@@ -153,11 +147,6 @@ export default function PermanentLobby({
       <div className={styles.contactsBody}>
         <div className={styles.addContactBlock}>
           <h3 className={styles.addContactTitle}>open or create a room</h3>
-          <p className={styles.permanentHint}>
-            Pick any code — letters, numbers, anything. Everyone who enters the same code
-            joins the same room, and the chat is kept on the server so you can come back
-            to it any time.
-          </p>
 
           <div className={styles.permanentRow}>
             <input
@@ -211,57 +200,49 @@ export default function PermanentLobby({
             </button>
           </div>
 
-          {strength.level !== "empty" && (
-            <p
-              className={`${styles.permanentHint} ${
-                strength.level === "weak" ? styles.permanentWarn : ""
-              }`}
-            >
-              {STRENGTH_TEXT[strength.level]}
+          {strength.level === "weak" && (
+            <p className={`${styles.permanentHint} ${styles.permanentWarn}`}>
+              weak code, easy to guess
             </p>
           )}
 
           <input
             className={styles.contactInput}
-            placeholder="your name in this room (optional)"
+            placeholder="name (optional)"
             value={displayName}
             maxLength={30}
             onChange={(event) => setDisplayName(event.target.value)}
           />
           <input
             className={styles.contactInput}
-            placeholder="label for this room, only you see it (optional)"
+            placeholder="label (optional)"
             value={label}
             maxLength={40}
             onChange={(event) => setLabel(event.target.value)}
           />
 
-          <label className={styles.permanentCheck}>
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(event) => setRemember(event.target.checked)}
-            />
-            remember this room on this device
-          </label>
+          <div className={styles.permanentToggleRow}>
+            <span>save room</span>
+            <button
+              type="button"
+              className={`${styles.settingsToggle} ${remember ? styles.settingsToggleActive : ""}`}
+              onClick={() => setRemember((value) => !value)}
+              role="switch"
+              aria-checked={remember}
+              aria-label="save room"
+            >
+              <span className={styles.settingsToggleKnob} />
+            </button>
+          </div>
 
           {error && <p className={`${styles.permanentHint} ${styles.permanentWarn}`}>{error}</p>}
 
           <button className={styles.btn} onClick={handleOpen} disabled={busy || !checked.ok}>
             {busy ? "opening…" : "open room"}
           </button>
-
-          <p className={styles.permanentHint}>
-            Messages are encrypted in your browser before they are sent; the server stores
-            only scrambled data and never sees your code.{" "}
-            <strong>If you lose the code, nobody can recover the chat.</strong> Anyone who has
-            the code can read and write in the room.
-          </p>
         </div>
 
-        {rooms.length === 0 ? (
-          <p className={styles.emptyContacts}>no rooms saved on this device</p>
-        ) : (
+        {rooms.length > 0 && (
           <div className={styles.contactsList}>
             {rooms.map((room) => (
               <div key={room.roomId} className={styles.contactItem}>
@@ -309,7 +290,7 @@ export default function PermanentLobby({
                       <button
                         className={styles.iconBtn}
                         onClick={() => setConfirmingForget(room.roomId)}
-                        title="remove from this device (the chat itself is not deleted)"
+                        title="remove"
                       >
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                           <path

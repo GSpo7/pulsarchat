@@ -114,6 +114,11 @@ export default function App() {
     setView(APP_VIEW.FEEDBACK);
   }, [setView, view]);
 
+  const handleOpenLegal = useCallback(() => {
+    setShowSettings(false);
+    setView(APP_VIEW.LEGAL);
+  }, [setView]);
+
   const handleOpenSavedChat = useCallback(
     ({ handle, nickname, initialRoomCode }) => {
       openActiveSavedChat({
@@ -306,6 +311,7 @@ export default function App() {
           fingerprint={settingsFingerprint}
           onOpenFeedback={handleOpenFeedback}
           showFeedbackAction={!activePeerScreen}
+          onOpenLegal={showGhostLobby ? handleOpenLegal : undefined}
         />
       )}
 
@@ -316,7 +322,6 @@ export default function App() {
           onContacts={() => setView(APP_VIEW.CONTACTS)}
           onSavedMode={switchToSavedMode}
           onPermanentMode={switchToPermanentMode}
-          onLegal={() => setView(APP_VIEW.LEGAL)}
           onOpenSettings={() => openSettings()}
           initialCode={initialCode}
         />

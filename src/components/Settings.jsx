@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SOURCE_URL as GITHUB_URL } from "../utils/sourceUrl";
+import { DEFAULT_FONT_SIZE_INDEX, FONT_SIZES } from "../utils/fontSize";
 import styles from "../App.module.css";
 
 const EXIT_ANIMATION_MS = 240;
@@ -26,8 +27,11 @@ export default function Settings({
   fingerprint,
   onOpenFeedback,
   showFeedbackAction = false,
+  onOpenLegal,
 }) {
   const [copied, setCopied] = useState(false);
+  const storedFontSize = Number(settings.fontSize);
+  const fontSizeIndex = FONT_SIZES[storedFontSize] ? storedFontSize : DEFAULT_FONT_SIZE_INDEX;
 
   useEffect(() => {
     if (isOpen) return undefined;
@@ -92,15 +96,24 @@ export default function Settings({
               />
             </div>
 
-            <div className={styles.settingsRow}>
-              <div>
-                <div className={styles.settingsLabel}>Compact mode</div>
-                <div className={styles.settingsSubLabel}>Smaller text and tighter spacing</div>
-              </div>
-              <Toggle
-                on={settings.compact}
-                onToggle={() => setSetting("compact", !settings.compact)}
+            <div className={styles.settingsSliderRow}>
+              <div className={styles.settingsLabel}>Font size</div>
+              <input
+                className={styles.settingsSlider}
+                type="range"
+                min={0}
+                max={FONT_SIZES.length - 1}
+                step={1}
+                value={fontSizeIndex}
+                style={{ "--fill": `${(fontSizeIndex / (FONT_SIZES.length - 1)) * 100}%` }}
+                onChange={(e) => setSetting("fontSize", Number(e.target.value))}
+                aria-label="Message font size"
+                aria-valuetext={`${FONT_SIZES[fontSizeIndex]} pixels`}
               />
+              <div className={styles.settingsSliderTicks} aria-hidden="true">
+                <span>A</span>
+                <span className={styles.settingsSliderTicksLarge}>A</span>
+              </div>
             </div>
           </div>
 
@@ -160,6 +173,11 @@ export default function Settings({
                 onClick={onOpenFeedback}
               >
                 send feedback
+              </button>
+            )}
+            {onOpenLegal && (
+              <button className={styles.settingsActionBtn} onClick={onOpenLegal}>
+                terms &amp; privacy
               </button>
             )}
             <a

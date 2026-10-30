@@ -2,9 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DELIVERY_STATUS, formatMessageTime, generateMessageId } from "../chat/messageModels";
 import { getServerConfig } from "../utils/serverConfig";
 import { playNotificationSound } from "../utils/sound";
-import { compressImage } from "../utils/image";
 import { CONNECTION, createPermanentClient } from "../permanent/permanentClient";
 import { openJson, sealJson } from "../permanent/messageCrypto";
+import {
+  MAX_IMAGE_FILE_BYTES,
+  isAudioDataUrl,
+  isImageDataUrl,
+  readAsDataUrl,
+} from "../permanent/media";
 
 const PERMANENT_URL = getServerConfig()?.permanentUrl || "";
 const TYPING_SEND_INTERVAL_MS = 2000;
@@ -60,7 +65,9 @@ async function decryptItem(key, item, ownSenderId) {
     return {
       ...base,
       text: typeof payload.text === "string" ? payload.text : "",
-      image: typeof payload.image === "string" ? payload.image : null,
+      image: isImageDataUrl(payload.image) ? payload.image : null,
+      audio: isAudioDataUrl(payload.audio) ? payload.audio : null,
+      audioSeconds: Number(payload.audioSeconds) || 0,
       replyTo: payload.replyTo || null,
       name: payload.name || anonymousName(item.senderId),
     };
@@ -69,6 +76,8 @@ async function decryptItem(key, item, ownSenderId) {
       ...base,
       text: UNREADABLE_TEXT,
       image: null,
+      audio: null,
+      audioSeconds: 0,
       replyTo: null,
       name: anonymousName(item.senderId),
       unreadable: true,
@@ -223,15 +232,24 @@ export function usePermanentRoom({ room, settings }) {
     return {
       id: target.id,
       name: target.name,
-      text: target.image ? "" : (target.text || "").slice(0, REPLY_SNIPPET_CHARS),
+      text: target.image || target.audio ? "" : (target.text || "").slice(0, REPLY_SNIPPET_CHARS),
       image: !!target.image,
+      audio: !!target.audio,
     };
   }, []);
 
   const sendPayload = useCallback(
-    async ({ kind, text = "", image = null }) => {
+    async ({ kind, text = "", image = null, audio = null, audioSeconds = 0 }) => {
       const replyTo = buildReply(replyTarget);
-      const payload = { v: 1, text, image, replyTo, name: displayNameRef.current || "" };
+      const payload = {
+        v: 1,
+        text,
+        image,
+        audio,
+        audioSeconds,
+        replyTo,
+        name: displayNameRef.current || "",
+      };
       const sealed = await sealJson(key, payload);
       const msgId = generateMessageId();
       const now = Date.now();
@@ -249,6 +267,8 @@ export function usePermanentRoom({ room, settings }) {
             name: displayNameRef.current || anonymousName(senderId),
             text,
             image,
+            audio,
+            audioSeconds,
             replyTo,
             status: DELIVERY_STATUS.QUEUED,
           },
@@ -269,10 +289,23 @@ export function usePermanentRoom({ room, settings }) {
     [sendPayload],
   );
 
+  // Sent as the file is: no resize or re-encode, so nothing is lost.
   const sendImageFile = useCallback(
     async (file) => {
-      const image = await compressImage(file);
+      if (!file.type.startsWith("image/")) throw new Error("that is not an image");
+      if (file.size > MAX_IMAGE_FILE_BYTES) {
+        throw new Error(`image is too large (max ${MAX_IMAGE_FILE_BYTES / 1024 / 1024} MB)`);
+      }
+      const image = await readAsDataUrl(file);
       return sendPayload({ kind: "image", image });
+    },
+    [sendPayload],
+  );
+
+  const sendVoiceNote = useCallback(
+    async (blob, seconds) => {
+      const audio = await readAsDataUrl(blob);
+      return sendPayload({ kind: "audio", audio, audioSeconds: seconds });
     },
     [sendPayload],
   );
@@ -311,6 +344,7 @@ export function usePermanentRoom({ room, settings }) {
     setReplyTarget,
     sendText,
     sendImageFile,
+    sendVoiceNote,
     retry,
     loadOlder,
     notifyTyping,

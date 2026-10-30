@@ -1,44 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import EMOJI from "../utils/emoji";
 import { DELIVERY_STATUS } from "../chat/messageModels";
 import { CONNECTION } from "../permanent/permanentClient";
 import { buildInviteUrl } from "../permanent/roomKeys";
 import { usePermanentRoom } from "../hooks/usePermanentRoom";
+import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
+import { formatDuration } from "../permanent/media";
+import PermanentVoiceNote from "./PermanentVoiceNote";
+import { messageFontStyle } from "../utils/fontSize";
 import styles from "../App.module.css";
-
-function EmojiPicker({ onPick, onClose }) {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    function handleClick(event) {
-      if (ref.current && !ref.current.contains(event.target)) onClose();
-    }
-
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [onClose]);
-
-  return (
-    <div className={styles.emojiPicker} ref={ref}>
-      {EMOJI.map((category) => (
-        <div key={category.name}>
-          <div className={styles.emojiCategory}>{category.name}</div>
-          <div className={styles.emojiGrid}>
-            {category.emojis.map((emoji) => (
-              <button
-                key={emoji}
-                className={styles.emojiBtn}
-                onClick={() => onPick(emoji)}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function Lightbox({ src, onClose }) {
   if (!src) return null;
@@ -76,13 +45,13 @@ export default function PermanentChat({
     setReplyTarget,
     sendText,
     sendImageFile,
+    sendVoiceNote,
     retry,
     loadOlder,
     notifyTyping,
   } = usePermanentRoom({ room, settings });
 
   const [input, setInput] = useState("");
-  const [showEmoji, setShowEmoji] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
 
@@ -95,6 +64,8 @@ export default function PermanentChat({
   const lastMessageIdRef = useRef(null);
 
   const live = connection === CONNECTION.LIVE;
+
+  const voice = useVoiceRecorder({ onLimit: () => sendRecording() });
 
   // Newest message changed -> follow it. Older page loaded -> keep the viewport still.
   useLayoutEffect(() => {
@@ -150,15 +121,27 @@ export default function PermanentChat({
     if (!file) return;
     try {
       await sendImageFile(file);
-    } catch {
-      onToast("could not send that image");
+    } catch (error) {
+      onToast(error.message || "could not send that image");
     }
   }
 
-  function handleEmojiPick(emoji) {
-    setInput((value) => `${value}${emoji}`);
-    setShowEmoji(false);
-    inputRef.current?.focus();
+  async function startRecording() {
+    try {
+      await voice.start();
+    } catch (error) {
+      onToast(error.message);
+    }
+  }
+
+  async function sendRecording() {
+    const note = await voice.finish();
+    if (!note) return;
+    try {
+      await sendVoiceNote(note.blob, note.seconds);
+    } catch {
+      onToast("could not send that voice note");
+    }
   }
 
   function copyInvite() {
@@ -170,7 +153,7 @@ export default function PermanentChat({
   }
 
   return (
-    <main className={`${styles.chatWrap} ${settings.compact ? styles.compact : ""}`}>
+    <main className={styles.chatWrap} style={messageFontStyle(settings)}>
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
 
       <div className={styles.chatHeader}>
@@ -289,14 +272,20 @@ export default function PermanentChat({
                   <div className={styles.replyQuote}>
                     {message.replyTo.image
                       ? "📷 image"
-                      : `${message.replyTo.text.slice(0, 80)}${
-                          message.replyTo.text.length > 80 ? "…" : ""
-                        }`}
+                      : message.replyTo.audio
+                        ? "🎤 voice note"
+                        : `${message.replyTo.text.slice(0, 80)}${
+                            message.replyTo.text.length > 80 ? "…" : ""
+                          }`}
                   </div>
                 )}
                 {message.image ? (
                   <div className={styles.imgBubble} onClick={() => setLightboxSrc(message.image)}>
                     <img src={message.image} alt="shared" />
+                  </div>
+                ) : message.audio ? (
+                  <div className={styles.bubble}>
+                    <PermanentVoiceNote src={message.audio} seconds={message.audioSeconds} />
                   </div>
                 ) : (
                   <div className={styles.bubble}>{message.text}</div>
@@ -349,7 +338,9 @@ export default function PermanentChat({
           <span className={styles.replyPreviewText}>
             {replyTarget.image
               ? "📷 image"
-              : `${replyTarget.text.slice(0, 60)}${replyTarget.text.length > 60 ? "…" : ""}`}
+              : replyTarget.audio
+                ? "🎤 voice note"
+                : `${replyTarget.text.slice(0, 60)}${replyTarget.text.length > 60 ? "…" : ""}`}
           </span>
           <button className={styles.imagePreviewCancel} onClick={() => setReplyTarget(null)}>
             &times;
@@ -357,97 +348,117 @@ export default function PermanentChat({
         </div>
       )}
 
-      <div className={styles.inputRow}>
-        <div className={styles.emojiPickerWrap}>
+      {voice.recording ? (
+        <div className={styles.inputRow}>
+          <button className={styles.iconBtn} onClick={voice.cancel} title="discard">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M3 3l10 10M13 3L3 13"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+          <div className={styles.voiceRecording}>
+            <span className={styles.voiceDot} />
+            <span className={styles.voiceTimer}>{formatDuration(voice.seconds)}</span>
+          </div>
+          <button className={styles.sendBtn} onClick={sendRecording} title="send voice note">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <div className={styles.inputRow}>
+          <button className={styles.iconBtn} onClick={startRecording} title="voice note">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <rect
+                x="6.5"
+                y="1.5"
+                width="5"
+                height="9"
+                rx="2.5"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M3.5 8.5a5.5 5.5 0 0011 0M9 14v2.5"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handleImageSelect}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: "none" }}
+            onChange={handleImageSelect}
+          />
           <button
             className={styles.iconBtn}
-            onClick={() => setShowEmoji((value) => !value)}
-            title="emoji"
+            onClick={() => fileInputRef.current?.click()}
+            title="send image from gallery"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.2" />
-              <circle cx="6.5" cy="7.5" r="1" fill="currentColor" />
-              <circle cx="11.5" cy="7.5" r="1" fill="currentColor" />
+              <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+              <circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" strokeWidth="1" />
               <path
-                d="M6 11.5c.8 1.2 2.2 1.8 3 1.8s2.2-.6 3-1.8"
+                d="M2 13l4-4 3 3 2-2 5 4"
                 stroke="currentColor"
                 strokeWidth="1.1"
                 strokeLinecap="round"
+                strokeLinejoin="round"
                 fill="none"
               />
             </svg>
           </button>
-          {showEmoji && (
-            <EmojiPicker onPick={handleEmojiPick} onClose={() => setShowEmoji(false)} />
-          )}
+          <button
+            className={styles.iconBtn}
+            onClick={() => cameraInputRef.current?.click()}
+            title="take photo"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M6.8 3h4.4l1.5 2H16a1 1 0 011 1v8a1 1 0 01-1 1H2a1 1 0 01-1-1V6a1 1 0 011-1h3.3L6.8 3z"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="9" cy="9.5" r="2.5" stroke="currentColor" strokeWidth="1.1" />
+            </svg>
+          </button>
+
+          <textarea
+            ref={inputRef}
+            className={styles.msgInput}
+            placeholder={live ? "Type here..." : "Type here — will send when back online"}
+            rows={1}
+            value={input}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+          />
+
+          <button className={styles.sendBtn} onClick={handleSend} disabled={!input.trim()}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="currentColor" />
+            </svg>
+          </button>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleImageSelect}
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: "none" }}
-          onChange={handleImageSelect}
-        />
-        <button
-          className={styles.iconBtn}
-          onClick={() => fileInputRef.current?.click()}
-          title="send image from gallery"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
-            <circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" strokeWidth="1" />
-            <path
-              d="M2 13l4-4 3 3 2-2 5 4"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          </svg>
-        </button>
-        <button
-          className={styles.iconBtn}
-          onClick={() => cameraInputRef.current?.click()}
-          title="take photo"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M6.8 3h4.4l1.5 2H16a1 1 0 011 1v8a1 1 0 01-1 1H2a1 1 0 01-1-1V6a1 1 0 011-1h3.3L6.8 3z"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <circle cx="9" cy="9.5" r="2.5" stroke="currentColor" strokeWidth="1.1" />
-          </svg>
-        </button>
-
-        <textarea
-          ref={inputRef}
-          className={styles.msgInput}
-          placeholder={live ? "Type here..." : "Type here — will send when back online"}
-          rows={1}
-          value={input}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-        />
-
-        <button className={styles.sendBtn} onClick={handleSend} disabled={!input.trim()}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="currentColor" />
-          </svg>
-        </button>
-      </div>
+      )}
     </main>
   );
 }
