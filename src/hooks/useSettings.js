@@ -7,7 +7,7 @@ const DEFAULTS = {
   sounds: false,
   autoDelete: false,
   fontSize: 1,
-  timestamps: true,
+  timestamps: false,
 };
 
 export function useSettings() {

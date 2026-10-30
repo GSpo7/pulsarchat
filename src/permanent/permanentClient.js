@@ -163,11 +163,23 @@ export function createPermanentClient({ url, roomId, senderId, onStatus, onFrame
     if (document.visibilityState === "visible") reconnectNow();
   }
 
+  // A page parked in the back/forward cache keeps its socket open, which would show
+  // as a phantom "online" member; drop it on the way out and reconnect on return.
+  function onPageHide() {
+    ws?.close();
+  }
+
+  function onPageShow(event) {
+    if (event.persisted) reconnectNow();
+  }
+
   return {
     start() {
       stopped = false;
       window.addEventListener("online", reconnectNow);
       document.addEventListener("visibilitychange", onVisible);
+      window.addEventListener("pagehide", onPageHide);
+      window.addEventListener("pageshow", onPageShow);
       connect();
     },
 
@@ -177,6 +189,8 @@ export function createPermanentClient({ url, roomId, senderId, onStatus, onFrame
       clearInterval(pingTimer);
       window.removeEventListener("online", reconnectNow);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
       for (const entry of pending.values()) {
         entry.reject(Object.assign(new Error("closed"), { code: "closed" }));
       }
@@ -197,6 +211,10 @@ export function createPermanentClient({ url, roomId, senderId, onStatus, onFrame
 
     requestOlder(beforeSeq, limit = 50) {
       rawSend({ type: "history", beforeSeq, limit });
+    },
+
+    sendRead(upToSeq) {
+      rawSend({ type: "read", upToSeq });
     },
 
     sendTyping(sealed) {

@@ -86,9 +86,21 @@ export function createPermanentRooms({
     broadcast(key, { type: "presence", online: members.size });
   }
 
+  // Own messages carry the time someone else first read them (null = not read yet).
+  function withReadTimes(ws, page) {
+    return {
+      ...page,
+      items: page.items.map((item) =>
+        item.senderId === ws.senderId
+          ? { ...item, readAt: db.readAt(ws.room.hash, item.seq, ws.senderId) }
+          : item,
+      ),
+    };
+  }
+
   function sendInitial(ws) {
     const page = db.listLatest(ws.room.hash, { limit: PAGE_SIZE });
-    send(ws, { type: "messages", dir: "initial", ...page });
+    send(ws, { type: "messages", dir: "initial", ...withReadTimes(ws, page) });
   }
 
   function onJoin(ws, msg) {
@@ -127,7 +139,7 @@ export function createPermanentRooms({
       let cursor = afterSeq;
       for (;;) {
         const page = db.listAfter(hash, cursor, CATCHUP_BATCH);
-        send(ws, { type: "messages", dir: "newer", ...page });
+        send(ws, { type: "messages", dir: "newer", ...withReadTimes(ws, page) });
         if (!page.hasMore) break;
         cursor = page.items[page.items.length - 1].seq;
       }
@@ -211,7 +223,19 @@ export function createPermanentRooms({
       MAX_HISTORY_PAGE,
     );
     const page = db.listLatest(ws.room.hash, { beforeSeq: msg.beforeSeq, limit });
-    send(ws, { type: "messages", dir: "older", ...page });
+    send(ws, { type: "messages", dir: "older", ...withReadTimes(ws, page) });
+  }
+
+  function onRead(ws, msg) {
+    if (!ws.room) return sendError(ws, "bad_request");
+    if (!Number.isInteger(msg.upToSeq) || msg.upToSeq < 1) return sendError(ws, "bad_request");
+    const ts = db.recordRead(ws.room.hash, ws.senderId, msg.upToSeq);
+    if (ts === null) return;
+    broadcast(
+      ws.room.key,
+      { type: "receipt", readerId: ws.senderId, upToSeq: msg.upToSeq, ts },
+      ws,
+    );
   }
 
   function onTyping(ws, msg) {
@@ -264,6 +288,7 @@ export function createPermanentRooms({
         else if (msg.type === "send") onSend(ws, msg);
         else if (msg.type === "history") onHistory(ws, msg);
         else if (msg.type === "typing") onTyping(ws, msg);
+        else if (msg.type === "read") onRead(ws, msg);
         else sendError(ws, "bad_request");
       } catch (error) {
         logger.error("[permanent] handler error:", error.message);

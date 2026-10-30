@@ -14,6 +14,7 @@ import {
 const PERMANENT_URL = getServerConfig()?.permanentUrl || "";
 const TYPING_SEND_INTERVAL_MS = 2000;
 const TYPING_VISIBLE_MS = 4000;
+const READ_RECEIPT_DELAY_MS = 800;
 const REPLY_SNIPPET_CHARS = 200;
 const UNREADABLE_TEXT = "🔒 this message could not be decrypted";
 
@@ -59,6 +60,8 @@ async function decryptItem(key, item, ownSenderId) {
     time: formatMessageTime(item.ts),
     type: item.senderId === ownSenderId ? "mine" : "theirs",
     status: DELIVERY_STATUS.SENT,
+    // set by the server for our own messages once someone else has read them
+    readAt: item.readAt ?? null,
   };
   try {
     const payload = await openJson(key, item);
@@ -100,6 +103,8 @@ export function usePermanentRoom({ room, settings }) {
   const messagesRef = useRef([]);
   const framesRef = useRef(new Map()); // msgId -> sent frame, kept for retry
   const lastTypingSentRef = useRef(0);
+  const lastReadSentRef = useRef(0);
+  const readTimerRef = useRef(null);
   const settingsRef = useRef(settings);
   const displayNameRef = useRef(displayName);
   settingsRef.current = settings;
@@ -189,6 +194,14 @@ export function usePermanentRoom({ room, settings }) {
             return next;
           });
           if (message.type === "theirs" && settingsRef.current?.sounds) playNotificationSound();
+        } else if (frame.type === "receipt") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.type === "mine" && m.seq != null && m.seq <= frame.upToSeq && !m.readAt
+                ? { ...m, readAt: frame.ts }
+                : m,
+            ),
+          );
         } else if (frame.type === "typing") {
           try {
             const payload = await openJson(key, frame);
@@ -226,6 +239,31 @@ export function usePermanentRoom({ room, settings }) {
       clientRef.current = null;
     };
   }, [roomId, key, senderId]);
+
+  // Tell the others how far we have read, once the room is open and visible.
+  const flushRead = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || client.getStatus() !== CONNECTION.LIVE) return;
+    if (document.visibilityState !== "visible") return;
+    let newest = 0;
+    for (const m of messagesRef.current) {
+      if (m.type === "theirs" && m.seq != null && m.seq > newest) newest = m.seq;
+    }
+    if (newest <= lastReadSentRef.current) return;
+    lastReadSentRef.current = newest;
+    client.sendRead(newest);
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(readTimerRef.current);
+    readTimerRef.current = setTimeout(flushRead, READ_RECEIPT_DELAY_MS);
+    return () => clearTimeout(readTimerRef.current);
+  }, [messages, connection, flushRead]);
+
+  useEffect(() => {
+    document.addEventListener("visibilitychange", flushRead);
+    return () => document.removeEventListener("visibilitychange", flushRead);
+  }, [flushRead]);
 
   const buildReply = useCallback((target) => {
     if (!target) return null;
