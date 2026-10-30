@@ -9,8 +9,8 @@ This is a self-hosted deployment of [munroo/pulsarchat](https://github.com/munro
 ## ✦ Features
 
 - End-to-end encryption (ECDH + AES-256-GCM)
-- **Ghost rooms** — peer-to-peer via WebRTC, nothing stored anywhere
-- **Permanent rooms** *(new)* — pick any code (text or digits, 1–2 048 characters); everyone who enters it shares one chat that is kept on the server and can be reopened from any device
+- **Ghost rooms** peer-to-peer via WebRTC, nothing stored anywhere
+- **Permanent rooms** *(new)* pick any code (text or digits, 1–2 048 characters); everyone who enters it shares one chat that is kept on the server and can be reopened from any device
 - Live typing indicator, emoji, encrypted image sharing, replies
 - Contacts with ping-to-chat, saved chats (history kept on your device)
 - Security fingerprint verification (ghost rooms)
@@ -25,7 +25,7 @@ This is a self-hosted deployment of [munroo/pulsarchat](https://github.com/munro
 Things to know
 - **Lose the code, lose the chat.** There is no recovery.
 - Anyone with the code can read and write. Short codes can be guessed — use *generate* or a long passphrase.
-- Rooms never expire and there is no "delete for everyone". The operator can purge a room (`scripts/purge-room.js`).
+- Rooms never expire and there is no "delete for everyone". The operator can purge a room.
 - The operator can see metadata (timing, sizes, IPs in infrastructure logs), not content.
 
 Details: [PLAN.md](PLAN.md). Hosting: [DEPLOYMENT.md](DEPLOYMENT.md).
@@ -52,7 +52,7 @@ npm run build && npm start  # production build served by the Node server
 
 ## ✦ Deploy
 
-One small VPS + Cloudflare Tunnel serves everything from a single origin. Follow [DEPLOYMENT.md](DEPLOYMENT.md) step by step (written for a Bluehost VPS, works on any Ubuntu server).
+One small VPS + Cloudflare Tunnel serves everything from a single origin.
 
 ## ✦ Environment variables
 
@@ -64,8 +64,6 @@ See [.env.example](.env.example) for the full, commented list (browser-side `VIT
 node scripts/purge-room.js --list              # rooms (hashes, sizes) — never content
 node scripts/purge-room.js --code "the code"   # delete one room (asks for confirmation)
 ```
-
-Back up the SQLite file nightly (see DEPLOYMENT.md, Part 9).
 
 ## ✦ License
 
